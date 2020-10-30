@@ -1,0 +1,16 @@
+---
+appVersion: "5.5.3"
+cluster:
+  xpackEnable: false
+client:
+  replicas: 1
+master:
+  replicas: 2
+data:
+  replicas: 1
+  persistence:
+    enabled: false
+image:
+  pullPolicy: IfNotPresent
+  repository: ssiaks-harbor-default.oit.duke.edu/cif/elasticsearch
+  tag: latest

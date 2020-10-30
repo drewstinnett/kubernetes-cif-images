@@ -1,0 +1,44 @@
+---
+# https://gitlab.com/gitlab-org/gitlab-foss/issues/27436#note_33922439
+variables:
+  CI_USER: $CI_REGISTRY_USER
+
+default:
+  tags:
+    - oit-shared
+
+stages:
+  - build
+
+build-main:
+  image: docker:latest
+  stage: build
+  services:
+    - docker:dind
+  variables:
+    CIF_TAG: 2ea3158
+  before_script:
+    - docker login -u "$CI_USER" -p "$CI_REGISTRY_PASSWORD" $CI_REGISTRY
+  script:
+    - export IMAGE_TAG="${CIF_TAG}-$(date +%s)"
+    - |
+      docker build --pull \
+      -t "$CI_REGISTRY_IMAGE:${IMAGE_TAG}" \
+      --build-arg CIF_TAG=${CIF_TAG} .
+    - docker push "$CI_REGISTRY_IMAGE:${IMAGE_TAG}"
+  only:
+    - main
+
+docker-build:
+  # Official docker image.
+  image: docker:latest
+  stage: build
+  services:
+    - docker:dind
+  before_script:
+    - docker login -u "$CI_USER" -p "$CI_REGISTRY_PASSWORD" $CI_REGISTRY
+  script:
+    - docker build --pull -t "$CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG" .
+    - docker push "$CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG"
+  except:
+    - main

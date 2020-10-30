@@ -1,0 +1,72 @@
+---
+# https://gitlab.com/gitlab-org/gitlab-foss/issues/27436#note_33922439
+variables:
+  CI_USER: $CI_REGISTRY_USER
+
+default:
+  tags:
+    - oit-shared
+
+stages:
+  - build
+  - test
+
+docker-build-main:
+  # Official docker image.
+  image: docker:latest
+  stage: build
+  services:
+    - docker:dind
+  before_script:
+    - docker login -u "$CI_USER" -p "$CI_REGISTRY_PASSWORD" $CI_REGISTRY
+  script:
+    - docker build --pull -t "$CI_REGISTRY_IMAGE" .
+    - docker push "$CI_REGISTRY_IMAGE"
+  only:
+    - main
+
+docker-build:
+  # Official docker image.
+  image: docker:latest
+  stage: build
+  services:
+    - docker:dind
+  before_script:
+    - docker login -u "$CI_USER" -p "$CI_REGISTRY_PASSWORD" $CI_REGISTRY
+  script:
+    - docker build --pull -t "$CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG" .
+    - docker push "$CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG"
+  except:
+    - main
+
+.test-k8s:
+  stage: test
+  image: gitlab-registry.oit.duke.edu/drews/docker-kind-tester:v1-0-0
+  except:
+    - main
+  services:
+    - docker:dind
+  before_script:
+    - kind create cluster --config=.gitlab/kind-config.yaml
+    - sed -i -E -e 's/localhost|0\.0\.0\.0/docker/g' "$HOME/.kube/config"
+    - |
+      kubectl get nodes -o wide
+      kubectl get pods --all-namespaces -o wide
+      kubectl get services --all-namespaces -o wide
+    - |
+      kubectl create ns cif
+      kubectl config set-context --current --namespace=cif
+    - helm repo add ssi-systems https://ssiaks-harbor-default.oit.duke.edu/chartrepo/ssi-systems
+    - time helm install --wait --debug --timeout 10m -f .gitlab/elasticsearch.values.yaml elasticsearch ssi-systems/elasticsearch
+
+Test Minimal:
+  extends: .test-k8s
+  script:
+    - |
+      time helm install --wait --timeout 10m --debug \
+        --set images.cif.tag=$CI_COMMIT_REF_SLUG \
+        --set replicaCount=1 \
+        --set autoscaling.minReplicas=1 \
+        --set smrt.enabled=true \
+        cif ssi-systems/cif
+      kubectl get pods

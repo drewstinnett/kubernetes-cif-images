@@ -1,0 +1,69 @@
+#!/bin/bash
+set -x
+set -e
+
+if [[ ! "$1" ]]; then
+    echo "Usage: $0 SUBDIR" 1>&2
+    exit 2
+else
+    SUBDIR=$1
+    SCHEDULE=$1
+fi
+
+echo "Checking for remember writability"
+df -h /remember
+ls -lah /remember
+touch /remember/.write_test
+
+RULES_DIR=/etc/cif/rules
+if [[ -n $CIF_SMRT_RULES_REPO ]]; then
+    echo "Pulling $CIF_SMRT_RULES_REPO in"
+    git clone "${CIF_SMRT_RULES_REPO}" /tmp/rules
+fi
+echo "Creating empty rules dir"
+mkdir ${RULES_DIR}
+
+readonly PYTHON_JINJA2="import os;
+import sys;
+import jinja2;
+sys.stdout.write(
+    jinja2.Template
+        (sys.stdin.read()
+    ).render(env=os.environ))
+"
+
+echo "Processing templates"
+for RULE_T in /tmp/rules/"${SUBDIR}"/*.j2; do
+    [[ -e "$RULE_T" ]] || break
+    RULE_Y=${RULE_T/.j2}
+    echo "Processing ${RULE_T} to ${RULE_Y}"
+    cat ${RULE_T} | python3 -c "${PYTHON_JINJA2}" > "${RULE_Y}"
+done
+
+## Set Goback time
+GOBACK=${SMRT_GOBACK:-7}
+
+
+ls "/tmp/rules"
+ls "/tmp/rules/${SUBDIR}"
+ls /tmp/rules/"${SUBDIR}"/*.yml && mv /tmp/rules/"${SUBDIR}"/*.yml ${RULES_DIR}
+for RULE in "${RULES_DIR}"/*.yml; do
+    [[ -e "$RULE" ]] || break
+
+    echo "$(date) - Processing ${RULE}"
+    time /usr/local/bin/csirtg-smrt \
+      -v \
+      --client cif \
+      --fireball \
+      --skip-invalid \
+      --goback "${GOBACK}" \
+      --remember \
+      --remember-path "/remember/smrt-${SCHEDULE}.db" \
+      --remote http://cif-router:80 \
+      --token "${CIF_TOKEN_SMRT}" \
+      --rule "${RULE}" || (
+    echo "Error running ${RULE}" 1>&2
+  )
+done
+
+# vi: ft=sh

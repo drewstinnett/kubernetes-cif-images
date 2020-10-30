@@ -1,0 +1,22 @@
+#!/bin/bash
+set -x
+set -e
+
+RULES_DIR=/etc/cif/rules
+if [[ -n $CIF_SMRT_RULES_REPO ]]; then
+    echo "Pulling $CIF_SMRT_RULES_REPO in"
+    git clone "${CIF_SMRT_RULES_REPO}" ${RULES_DIR}
+else
+    echo "Creating empty rules dir"
+    mkdir ${RULES_DIR}
+fi
+
+/usr/local/bin/csirtg-smrt \
+  --client cif \
+  --fireball \
+  --goback 7 \
+  --remote http://cif-router:80 \
+  --token "${CIF_TOKEN_SMRT}" \
+  --rule /etc/cif/rules/
+
+# vi: ft=sh
